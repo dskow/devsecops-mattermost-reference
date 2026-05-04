@@ -17,11 +17,13 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 WEBHOOK_TIMEOUT_SECONDS = 10
 MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = 2
+ALLOWED_URL_SCHEMES = ("https",)
 
 COLOR_CRITICAL = "#cc0000"
 COLOR_HIGH = "#e8a33d"
@@ -71,6 +73,18 @@ def build_payload() -> dict:
 
 
 def post_with_retries(webhook_url: str, payload: dict) -> None:
+    # Validate the URL scheme before passing to urlopen. urllib.request.urlopen
+    # will happily handle file:// and other schemes if given them — bandit B310
+    # flags this. We restrict to https:// so a misconfigured secret can't be
+    # used to read local files or hit unexpected protocols.
+    parsed = urllib.parse.urlsplit(webhook_url)
+    if parsed.scheme not in ALLOWED_URL_SCHEMES:
+        print(
+            f"refusing to POST: webhook URL scheme '{parsed.scheme}' is not allowed",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         webhook_url,
@@ -82,7 +96,8 @@ def post_with_retries(webhook_url: str, payload: dict) -> None:
     last_error: Exception | None = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            with urllib.request.urlopen(request, timeout=WEBHOOK_TIMEOUT_SECONDS) as response:
+            # Scheme validated to https-only above; bandit B310 suppressed on the call line.
+            with urllib.request.urlopen(request, timeout=WEBHOOK_TIMEOUT_SECONDS) as response:  # nosec B310
                 if 200 <= response.status < 300:
                     print(f"posted to mattermost (attempt {attempt}, status {response.status})")
                     return
