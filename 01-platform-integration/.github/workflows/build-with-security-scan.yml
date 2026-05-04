@@ -1,0 +1,99 @@
+name: Build and Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  IMAGE_NAME: ${{ github.repository }}
+  TRIVY_SEVERITY: HIGH,CRITICAL
+
+jobs:
+  build-and-scan:
+    name: Build container and scan for CVEs
+    runs-on: ubuntu-latest
+    outputs:
+      build_status: ${{ steps.build.outcome }}
+      scan_status: ${{ steps.scan.outcome }}
+      cve_summary: ${{ steps.summarize.outputs.summary }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build container image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scan
+        id: scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: ${{ env.TRIVY_SEVERITY }}
+          exit-code: '1'
+          ignore-unfixed: true
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Summarize findings for notification
+        id: summarize
+        if: always()
+        run: |
+          if [ -f trivy-results.sarif ]; then
+            HIGH=$(jq '[.runs[].results[] | select(.level == "warning")] | length' trivy-results.sarif)
+            CRITICAL=$(jq '[.runs[].results[] | select(.level == "error")] | length' trivy-results.sarif)
+            echo "summary=CRITICAL: ${CRITICAL}, HIGH: ${HIGH}" >> "$GITHUB_OUTPUT"
+          else
+            echo "summary=scan did not produce results file" >> "$GITHUB_OUTPUT"
+          fi
+
+  notify-mattermost:
+    name: Notify Mattermost on failure or findings
+    needs: build-and-scan
+    if: always() && (needs.build-and-scan.result == 'failure' || needs.build-and-scan.outputs.scan_status == 'failure')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (for notifier script)
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Post alert to Mattermost
+        env:
+          MATTERMOST_WEBHOOK_URL: ${{ secrets.MATTERMOST_WEBHOOK_URL }}
+          BUILD_STATUS: ${{ needs.build-and-scan.outputs.build_status }}
+          SCAN_STATUS: ${{ needs.build-and-scan.outputs.scan_status }}
+          CVE_SUMMARY: ${{ needs.build-and-scan.outputs.cve_summary }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python scripts/notify_mattermost.py

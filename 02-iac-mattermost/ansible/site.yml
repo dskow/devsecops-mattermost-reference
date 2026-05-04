@@ -1,0 +1,153 @@
+---
+# Top-level play for the Mattermost server.
+#
+# Order matters:
+#   1. Harden the OS first, before anything is exposed.
+#   2. Install Mattermost.
+#   3. Provision teams/channels via the Mattermost API once the service is up.
+#
+# Inventory is generated from Terraform outputs. Example:
+#   terraform output -json | python ../scripts/tf_to_inventory.py > inventory.ini
+
+- name: Harden the Mattermost host
+  hosts: mattermost_servers
+  become: true
+  roles:
+    - mattermost_hardening
+
+- name: Install and configure Mattermost
+  hosts: mattermost_servers
+  become: true
+  vars:
+    mattermost_version: "9.5.2"
+    mattermost_install_dir: /opt/mattermost
+    mattermost_user: mattermost
+    mattermost_db_host: "{{ lookup('env', 'MM_DB_HOST') }}"
+    mattermost_db_user: mmadmin
+    mattermost_db_password: "{{ lookup('env', 'MM_DB_PASSWORD') }}"
+    mattermost_s3_bucket: "{{ lookup('env', 'MM_UPLOADS_BUCKET') }}"
+
+  tasks:
+    - name: Create mattermost service user
+      ansible.builtin.user:
+        name: "{{ mattermost_user }}"
+        system: true
+        shell: /sbin/nologin
+        home: "{{ mattermost_install_dir }}"
+
+    - name: Download Mattermost
+      ansible.builtin.get_url:
+        url: "https://releases.mattermost.com/{{ mattermost_version }}/mattermost-{{ mattermost_version }}-linux-amd64.tar.gz"
+        dest: "/tmp/mattermost-{{ mattermost_version }}.tar.gz"
+        checksum: "sha256:{{ mattermost_sha256 | default(omit) }}"
+        mode: "0644"
+
+    - name: Extract Mattermost
+      ansible.builtin.unarchive:
+        src: "/tmp/mattermost-{{ mattermost_version }}.tar.gz"
+        dest: /opt/
+        remote_src: true
+        owner: "{{ mattermost_user }}"
+        group: "{{ mattermost_user }}"
+        creates: "{{ mattermost_install_dir }}/bin/mattermost"
+
+    - name: Render Mattermost config
+      ansible.builtin.template:
+        src: templates/config.json.j2
+        dest: "{{ mattermost_install_dir }}/config/config.json"
+        owner: "{{ mattermost_user }}"
+        group: "{{ mattermost_user }}"
+        mode: "0640"
+      notify: restart mattermost
+
+    - name: Install systemd unit
+      ansible.builtin.template:
+        src: templates/mattermost.service.j2
+        dest: /etc/systemd/system/mattermost.service
+        mode: "0644"
+      notify:
+        - reload systemd
+        - restart mattermost
+
+    - name: Enable and start mattermost
+      ansible.builtin.systemd:
+        name: mattermost
+        enabled: true
+        state: started
+
+  handlers:
+    - name: reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: restart mattermost
+      ansible.builtin.systemd:
+        name: mattermost
+        state: restarted
+
+- name: Provision initial teams and channels
+  hosts: mattermost_servers
+  gather_facts: false
+  vars:
+    mm_api_url: "https://{{ mattermost_public_hostname }}/api/v4"
+    # Admin token is created out-of-band on first boot and stored in Secrets Manager.
+    # Provided to the play via env var so it never lands in the inventory file.
+    mm_admin_token: "{{ lookup('env', 'MM_ADMIN_TOKEN') }}"
+
+    teams:
+      - { name: "cyber-ops",          display: "Cyber Operations",     type: "O" }
+      - { name: "program-leadership", display: "Program Leadership",   type: "I" }
+
+    channels:
+      - { team: "cyber-ops",          name: "general",              display: "General",                type: "O" }
+      - { team: "cyber-ops",          name: "sec-pipeline-alerts",  display: "Pipeline Alerts",        type: "O" }
+      - { team: "cyber-ops",          name: "sec-vuln-triage",      display: "Vulnerability Triage",   type: "O" }
+      - { team: "cyber-ops",          name: "incident-response",    display: "Incident Response",      type: "O" }
+      - { team: "cyber-ops",          name: "change-management",    display: "Change Management",      type: "O" }
+      - { team: "cyber-ops",          name: "ops-on-call",          display: "Ops On-Call",            type: "O" }
+      - { team: "program-leadership", name: "leadership-sync",      display: "Leadership Sync",        type: "P" }
+      - { team: "program-leadership", name: "compliance-evidence",  display: "Compliance Evidence",    type: "P" }
+
+  tasks:
+    - name: Create teams (idempotent — Mattermost returns 400 if exists, we ignore that)
+      ansible.builtin.uri:
+        url: "{{ mm_api_url }}/teams"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ mm_admin_token }}"
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          display_name: "{{ item.display }}"
+          type: "{{ item.type }}"
+        status_code: [201, 400]
+      loop: "{{ teams }}"
+
+    - name: Look up team IDs
+      ansible.builtin.uri:
+        url: "{{ mm_api_url }}/teams/name/{{ item.name }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ mm_admin_token }}"
+        return_content: true
+      register: team_lookups
+      loop: "{{ teams }}"
+
+    - name: Build team_id map
+      ansible.builtin.set_fact:
+        team_ids: "{{ dict(team_lookups.results | map(attribute='json') | map(attribute='name') | zip(team_lookups.results | map(attribute='json') | map(attribute='id'))) }}"
+
+    - name: Create channels (idempotent)
+      ansible.builtin.uri:
+        url: "{{ mm_api_url }}/channels"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ mm_admin_token }}"
+        body_format: json
+        body:
+          team_id: "{{ team_ids[item.team] }}"
+          name: "{{ item.name }}"
+          display_name: "{{ item.display }}"
+          type: "{{ item.type }}"
+        status_code: [201, 400]
+      loop: "{{ channels }}"
