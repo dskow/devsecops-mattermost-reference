@@ -1,0 +1,33 @@
+version: 2
+
+updates:
+  # GitHub Actions used by the build/scan workflow and the IaC validate workflow.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"
+
+  # Python tooling for the notifier (urllib is stdlib, so this catches setup-python
+  # action major bumps and any future requirements files).
+  - package-ecosystem: "pip"
+    directory: "/01-platform-integration/scripts"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "python"
+
+  # Terraform AWS provider and module versions.
+  - package-ecosystem: "terraform"
+    directory: "/02-iac-mattermost/terraform"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "terraform"

@@ -20,8 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build_status: ${{ steps.build.outcome }}
-      scan_status: ${{ steps.scan.outcome }}
-      cve_summary: ${{ steps.summarize.outputs.summary }}
+      scan_status: ${{ steps.count.outputs.scan_status }}
+      cve_summary: ${{ steps.count.outputs.summary }}
 
     steps:
       - name: Checkout
@@ -41,15 +41,51 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Run Trivy vulnerability scan
-        id: scan
+      # Run Trivy twice intentionally:
+      #   1. JSON output is parsed by jq for severity counts. The SARIF `level`
+      #      field collapses all Trivy findings to "warning", so it can't be
+      #      used to distinguish HIGH vs CRITICAL.
+      #   2. SARIF output goes to the GitHub Security tab. Layer caching means
+      #      the second invocation is effectively free.
+      - name: Trivy scan (JSON, for severity counts)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          format: json
+          output: trivy-results.json
+          severity: ${{ env.TRIVY_SEVERITY }}
+          exit-code: '0'
+          ignore-unfixed: true
+
+      - name: Count findings by severity
+        id: count
+        run: |
+          if [ ! -f trivy-results.json ]; then
+            echo "summary=scan did not produce results file" >> "$GITHUB_OUTPUT"
+            echo "scan_status=failure" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "HIGH")] | length' trivy-results.json)
+          CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' trivy-results.json)
+
+          echo "summary=CRITICAL: ${CRITICAL}, HIGH: ${HIGH}" >> "$GITHUB_OUTPUT"
+
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "scan_status=failure" >> "$GITHUB_OUTPUT"
+          else
+            echo "scan_status=success" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trivy scan (SARIF, for Security tab)
+        if: always()
         uses: aquasecurity/trivy-action@0.24.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
           severity: ${{ env.TRIVY_SEVERITY }}
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
 
       - name: Upload SARIF to GitHub Security tab
@@ -58,22 +94,22 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
-      - name: Summarize findings for notification
-        id: summarize
-        if: always()
+      - name: Fail job on HIGH/CRITICAL findings
+        if: steps.count.outputs.scan_status == 'failure'
         run: |
-          if [ -f trivy-results.sarif ]; then
-            HIGH=$(jq '[.runs[].results[] | select(.level == "warning")] | length' trivy-results.sarif)
-            CRITICAL=$(jq '[.runs[].results[] | select(.level == "error")] | length' trivy-results.sarif)
-            echo "summary=CRITICAL: ${CRITICAL}, HIGH: ${HIGH}" >> "$GITHUB_OUTPUT"
-          else
-            echo "summary=scan did not produce results file" >> "$GITHUB_OUTPUT"
-          fi
+          echo "Findings: ${{ steps.count.outputs.summary }}"
+          exit 1
 
   notify-mattermost:
     name: Notify Mattermost on failure or findings
     needs: build-and-scan
-    if: always() && (needs.build-and-scan.result == 'failure' || needs.build-and-scan.outputs.scan_status == 'failure')
+    # Skip on fork PRs — secrets aren't injected, so the job would fail loudly
+    # for what's actually expected behavior. Compares head repo to base repo;
+    # equal means same-repo PR or push event.
+    if: |
+      always() &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) &&
+      (needs.build-and-scan.result == 'failure' || needs.build-and-scan.outputs.scan_status == 'failure')
     runs-on: ubuntu-latest
 
     steps:

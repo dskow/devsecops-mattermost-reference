@@ -1,0 +1,73 @@
+{
+  "_comment": "Reference config.json for Mattermost. Tuned for STIG-aligned operation. Real engagements override per-program (LDAP/SAML, log shipping, file storage, public hostname).",
+
+  "ServiceSettings": {
+    "SiteURL": "https://{{ mattermost_public_hostname }}",
+    "ListenAddress": ":8065",
+    "MaximumLoginAttempts": 10,
+    "EnableLocalMode": false,
+    "SessionLengthWebInDays": 1,
+    "SessionIdleTimeoutInMinutes": 15,
+    "TLSStrictTransport": true,
+    "TLSStrictTransportMaxAge": 63072000,
+    "EnableInsecureOutgoingConnections": false
+  },
+
+  "SqlSettings": {
+    "DriverName": "postgres",
+    "DataSource": "postgres://{{ mattermost_db_user }}:{{ mattermost_db_password }}@{{ mattermost_db_host }}:5432/mattermost?sslmode=require&connect_timeout=10",
+    "MaxIdleConns": 20,
+    "MaxOpenConns": 300,
+    "Trace": false,
+    "AtRestEncryptKey": "{{ mattermost_at_rest_key }}"
+  },
+
+  "FileSettings": {
+    "DriverName": "amazons3",
+    "AmazonS3Bucket": "{{ mattermost_s3_bucket }}",
+    "AmazonS3SSE": true,
+    "EnablePublicLink": false,
+    "MaxFileSize": 104857600
+  },
+
+  "EmailSettings": {
+    "EnableSignInWithEmail": false,
+    "EnableSignInWithUsername": false,
+    "RequireEmailVerification": true,
+    "EnableSMTPAuth": true,
+    "ConnectionSecurity": "TLS"
+  },
+
+  "LogSettings": {
+    "EnableConsole": true,
+    "ConsoleLevel": "INFO",
+    "EnableFile": true,
+    "FileLevel": "INFO",
+    "FileLocation": "/opt/mattermost/logs",
+    "EnableDiagnostics": false,
+    "EnableSentry": false
+  },
+
+  "ExperimentalAuditSettings": {
+    "FileEnabled": true,
+    "FileName": "/opt/mattermost/logs/audit.log",
+    "FileMaxSizeMB": 100,
+    "FileMaxAgeDays": 30,
+    "FileMaxBackups": 10,
+    "FileCompress": true
+  },
+
+  "AnnouncementSettings": {
+    "EnableBanner": true,
+    "BannerText": "You are accessing a U.S. Government (USG) Information System (IS) that is provided for USG-authorized use only. ...",
+    "BannerColor": "#cc0000",
+    "BannerTextColor": "#ffffff",
+    "AllowBannerDismissal": false
+  },
+
+  "TeamSettings": {
+    "EnableUserCreation": false,
+    "EnableOpenServer": false,
+    "RestrictDirectMessage": "team"
+  }
+}

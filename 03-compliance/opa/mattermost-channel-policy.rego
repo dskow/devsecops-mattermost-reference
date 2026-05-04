@@ -19,6 +19,8 @@
 
 package mattermost.channel
 
+import rego.v1
+
 # Teams that may not contain open (`O`) channels. Anything in these teams must be private.
 restricted_teams := {"program-leadership", "incident-response-active"}
 

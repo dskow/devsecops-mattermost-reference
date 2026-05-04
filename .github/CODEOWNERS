@@ -1,0 +1,10 @@
+# Code ownership for this reference repo.
+# Used by GitHub to require review and by the runbook-update enforcement rule
+# referenced in 04-runbooks/README.md.
+
+* @dskow
+
+# Channel taxonomy in the playbook is paired with the runbooks — any change
+# to one expects a change to the other. CODEOWNERS pulls both reviewers in.
+/02-iac-mattermost/ansible/site.yml @dskow
+/04-runbooks/                       @dskow

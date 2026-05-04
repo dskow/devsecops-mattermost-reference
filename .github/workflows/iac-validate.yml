@@ -1,0 +1,153 @@
+name: IaC validate
+
+# Validates this repo's own artifacts on every PR and push to main.
+# This is the meta-DevSecOps move: we apply the same gating to the
+# reference implementation that we'd apply to a customer codebase.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform fmt + validate + tflint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 02-iac-mattermost/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (no backend)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.50.3
+
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive
+
+  ansible:
+    name: Ansible syntax + lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 02-iac-mattermost/ansible
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ansible-core and ansible-lint
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible-core==2.16.* ansible-lint==24.*
+
+      - name: Install collections
+        run: ansible-galaxy collection install -r requirements.yml
+
+      - name: ansible-playbook syntax check
+        run: ansible-playbook --syntax-check site.yml -i localhost,
+
+      - name: ansible-lint
+        run: ansible-lint site.yml roles/
+
+  opa:
+    name: OPA fmt + eval
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 03-compliance/opa
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OPA
+        run: |
+          curl -L -o /tmp/opa https://openpolicyagent.org/downloads/v0.64.1/opa_linux_amd64_static
+          chmod +x /tmp/opa
+          sudo mv /tmp/opa /usr/local/bin/opa
+
+      - name: opa fmt --diff
+        run: opa fmt --diff mattermost-channel-policy.rego
+
+      - name: opa eval — sample valid input is allowed
+        run: |
+          cat > /tmp/valid.json <<'EOF'
+          {
+            "action": "create",
+            "channel": {
+              "name": "general",
+              "display_name": "General",
+              "type": "O",
+              "team": "cyber-ops",
+              "purpose": "CUI Owner: jane.doe",
+              "header": "",
+              "creator_email": "jane.doe@example.mil"
+            }
+          }
+          EOF
+          RESULT=$(opa eval -d mattermost-channel-policy.rego -i /tmp/valid.json "data.mattermost.channel.deny" --format pretty)
+          echo "$RESULT"
+          [ "$RESULT" = "[]" ] || (echo "expected empty deny set for valid input"; exit 1)
+
+      - name: opa eval — public channel under restricted team is denied
+        run: |
+          cat > /tmp/invalid.json <<'EOF'
+          {
+            "action": "create",
+            "channel": {
+              "name": "leaks",
+              "display_name": "Leaks",
+              "type": "O",
+              "team": "program-leadership",
+              "purpose": "CUI Owner: someone",
+              "header": "",
+              "creator_email": "x@example.mil"
+            }
+          }
+          EOF
+          RESULT=$(opa eval -d mattermost-channel-policy.rego -i /tmp/invalid.json "data.mattermost.channel.deny" --format pretty)
+          echo "$RESULT"
+          echo "$RESULT" | grep -q "only allows private" || (echo "expected deny on restricted-team open channel"; exit 1)
+
+  python:
+    name: Notifier — bandit + smoke import
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dev tooling
+        run: pip install bandit==1.7.* ruff==0.4.*
+
+      - name: ruff check
+        run: ruff check 01-platform-integration/scripts/
+
+      - name: bandit
+        run: bandit -r 01-platform-integration/scripts/
+
+      - name: smoke import (no network)
+        run: python -c "import importlib.util, sys; spec = importlib.util.spec_from_file_location('m', '01-platform-integration/scripts/notify_mattermost.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); print('imported ok')"

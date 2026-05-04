@@ -54,3 +54,8 @@ variable "allowed_cidr_blocks" {
   type        = list(string)
   default     = ["10.0.0.0/8"]
 }
+
+variable "acm_certificate_arn" {
+  description = "ACM certificate ARN for the ALB HTTPS listener. Issue or import via the program's PKI process before applying."
+  type        = string
+}

@@ -135,7 +135,9 @@
 
     - name: Build team_id map
       ansible.builtin.set_fact:
-        team_ids: "{{ dict(team_lookups.results | map(attribute='json') | map(attribute='name') | zip(team_lookups.results | map(attribute='json') | map(attribute='id'))) }}"
+        # items2dict reads each looked-up team JSON and produces {name: id, ...}
+        # which is what the channels loop below indexes into.
+        team_ids: "{{ team_lookups.results | map(attribute='json') | items2dict(key_name='name', value_name='id') }}"
 
     - name: Create channels (idempotent)
       ansible.builtin.uri:

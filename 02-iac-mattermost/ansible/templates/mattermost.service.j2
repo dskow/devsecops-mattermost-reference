@@ -1,0 +1,32 @@
+[Unit]
+Description=Mattermost
+After=network.target
+
+[Service]
+Type=notify
+ExecStart={{ mattermost_install_dir }}/bin/mattermost
+TimeoutStartSec=3600
+KillMode=mixed
+Restart=always
+RestartSec=10
+WorkingDirectory={{ mattermost_install_dir }}
+User={{ mattermost_user }}
+Group={{ mattermost_user }}
+LimitNOFILE=49152
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

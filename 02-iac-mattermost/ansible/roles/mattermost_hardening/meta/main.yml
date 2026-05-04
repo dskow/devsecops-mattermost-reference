@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: mattermost_hardening
+  author: dskow
+  description: STIG-aligned hardening for the RHEL 8/9 host running Mattermost.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+  galaxy_tags:
+    - security
+    - stig
+    - rhel
+    - mattermost
+
+dependencies: []
