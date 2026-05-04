@@ -1,13 +1,14 @@
 ---
-- name: restart sshd
+- name: Restart sshd
   ansible.builtin.systemd:
     name: sshd
     state: restarted
 
-- name: reload auditd
+- name: Reload auditd
   ansible.builtin.command: augenrules --load
+  changed_when: true
   listen: reload auditd
 
-- name: reboot host
+- name: Reboot host
   ansible.builtin.reboot:
     reboot_timeout: 600

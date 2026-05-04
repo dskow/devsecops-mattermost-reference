@@ -1,21 +1,22 @@
 ---
 # Defaults for mattermost_hardening. Override in group_vars / host_vars / inventory.
+# Variable names are role-prefixed (mattermost_hardening_*) per ansible-lint var-naming.
 
 # Banner text. Replace with the program's officially approved DoD warning banner.
-hardening_banner_text: |
+mattermost_hardening_banner_text: |
   You are accessing a U.S. Government (USG) Information System (IS) that is
   provided for USG-authorized use only. By using this IS (which includes any
   device attached to this IS), you consent to the following conditions:
   ... (full DoD warning banner) ...
 
 # SSH idle timeout (seconds). 600s = 10 min, matches DISA RHEL 8 STIG.
-hardening_ssh_client_alive_interval: 600
+mattermost_hardening_ssh_client_alive_interval: 600
 
 # Password policy (pwquality)
-hardening_password_min_len: 15
-hardening_password_min_class: 4
-hardening_password_difok: 8
+mattermost_hardening_password_min_len: 15
+mattermost_hardening_password_min_class: 4
+mattermost_hardening_password_difok: 8
 
 # Whether to enable FIPS mode. Reboot is required when toggling — set to false
 # in test environments where the reboot is disruptive.
-hardening_enable_fips: true
+mattermost_hardening_enable_fips: true

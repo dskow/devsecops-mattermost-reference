@@ -58,7 +58,7 @@
         owner: "{{ mattermost_user }}"
         group: "{{ mattermost_user }}"
         mode: "0640"
-      notify: restart mattermost
+      notify: Restart mattermost
 
     - name: Install systemd unit
       ansible.builtin.template:
@@ -66,8 +66,8 @@
         dest: /etc/systemd/system/mattermost.service
         mode: "0644"
       notify:
-        - reload systemd
-        - restart mattermost
+        - Reload systemd
+        - Restart mattermost
 
     - name: Enable and start mattermost
       ansible.builtin.systemd:
@@ -76,11 +76,11 @@
         state: started
 
   handlers:
-    - name: reload systemd
+    - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: true
 
-    - name: restart mattermost
+    - name: Restart mattermost
       ansible.builtin.systemd:
         name: mattermost
         state: restarted
@@ -95,18 +95,18 @@
     mm_admin_token: "{{ lookup('env', 'MM_ADMIN_TOKEN') }}"
 
     teams:
-      - { name: "cyber-ops",          display: "Cyber Operations",     type: "O" }
-      - { name: "program-leadership", display: "Program Leadership",   type: "I" }
+      - { name: "cyber-ops", display: "Cyber Operations", type: "O" }
+      - { name: "program-leadership", display: "Program Leadership", type: "I" }
 
     channels:
-      - { team: "cyber-ops",          name: "general",              display: "General",                type: "O" }
-      - { team: "cyber-ops",          name: "sec-pipeline-alerts",  display: "Pipeline Alerts",        type: "O" }
-      - { team: "cyber-ops",          name: "sec-vuln-triage",      display: "Vulnerability Triage",   type: "O" }
-      - { team: "cyber-ops",          name: "incident-response",    display: "Incident Response",      type: "O" }
-      - { team: "cyber-ops",          name: "change-management",    display: "Change Management",      type: "O" }
-      - { team: "cyber-ops",          name: "ops-on-call",          display: "Ops On-Call",            type: "O" }
-      - { team: "program-leadership", name: "leadership-sync",      display: "Leadership Sync",        type: "P" }
-      - { team: "program-leadership", name: "compliance-evidence",  display: "Compliance Evidence",    type: "P" }
+      - { team: "cyber-ops", name: "general", display: "General", type: "O" }
+      - { team: "cyber-ops", name: "sec-pipeline-alerts", display: "Pipeline Alerts", type: "O" }
+      - { team: "cyber-ops", name: "sec-vuln-triage", display: "Vulnerability Triage", type: "O" }
+      - { team: "cyber-ops", name: "incident-response", display: "Incident Response", type: "O" }
+      - { team: "cyber-ops", name: "change-management", display: "Change Management", type: "O" }
+      - { team: "cyber-ops", name: "ops-on-call", display: "Ops On-Call", type: "O" }
+      - { team: "program-leadership", name: "leadership-sync", display: "Leadership Sync", type: "P" }
+      - { team: "program-leadership", name: "compliance-evidence", display: "Compliance Evidence", type: "P" }
 
   tasks:
     - name: Create teams (idempotent — Mattermost returns 400 if exists, we ignore that)
