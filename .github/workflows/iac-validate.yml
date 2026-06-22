@@ -21,7 +21,7 @@ jobs:
       run:
         working-directory: 02-iac-mattermost/terraform
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: hashicorp/setup-terraform@v4
         with:
@@ -52,7 +52,7 @@ jobs:
       run:
         working-directory: 02-iac-mattermost/ansible
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -79,7 +79,7 @@ jobs:
       run:
         working-directory: 03-compliance/opa
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install OPA
         run: |
@@ -134,7 +134,7 @@ jobs:
     name: Notifier — bandit + smoke import
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
